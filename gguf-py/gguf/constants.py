@@ -95,6 +95,7 @@ class MODEL_ARCH(IntEnum):
     BLOOM     = auto()
     STABLELM  = auto()
     QWEN      = auto()
+    MAMBA     = auto()
 
 
 class MODEL_TENSOR(IntEnum):
@@ -123,7 +124,16 @@ class MODEL_TENSOR(IntEnum):
     FFN_UP_EXP      = auto()
     ATTN_Q_NORM     = auto()
     ATTN_K_NORM     = auto()
-
+    SSM_A_LOG       = auto()
+    SSM_D           = auto()
+    SSM_DT1_B_C     = auto()
+    SSM_DT2         = auto()
+    SSM_DT_BIAS     = auto()
+    SSM_NORM        = auto()
+    SSM_MIX         = auto()
+    SSM_MIX_BIAS    = auto()
+    SSM_O           = auto()
+    SSM_V_Z         = auto()
 
 MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.LLAMA:          "llama",
@@ -140,6 +150,7 @@ MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.BLOOM:          "bloom",
     MODEL_ARCH.STABLELM:       "stablelm",
     MODEL_ARCH.QWEN:           "qwen",
+    MODEL_ARCH.MAMBA:          "mamba"
 }
 
 TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
@@ -168,6 +179,16 @@ TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
     MODEL_TENSOR.FFN_GATE_EXP:    "blk.{bid}.ffn_gate.{xid}",
     MODEL_TENSOR.FFN_DOWN_EXP:    "blk.{bid}.ffn_down.{xid}",
     MODEL_TENSOR.FFN_UP_EXP:      "blk.{bid}.ffn_up.{xid}",
+    MODEL_TENSOR.SSM_A_LOG:       "blk.{bid}.ssm_a_log",
+    MODEL_TENSOR.SSM_D:           "blk.{bid}.ssm_d",
+    MODEL_TENSOR.SSM_DT1_B_C:     "blk.{bid}.ssm_dt1_b_c",
+    MODEL_TENSOR.SSM_DT2:         "blk.{bid}.ssm_dt2",
+    MODEL_TENSOR.SSM_DT_BIAS:     "blk.{bid}.ssm_dt_bias",
+    MODEL_TENSOR.SSM_NORM:        "blk.{bid}.ssm_norm",
+    MODEL_TENSOR.SSM_MIX:         "blk.{bid}.ssm_mix",
+    MODEL_TENSOR.SSM_MIX_BIAS:    "blk.{bid}.ssm_mix_bias",
+    MODEL_TENSOR.SSM_O:           "blk.{bid}.ssm_o",
+    MODEL_TENSOR.SSM_V_Z:         "blk.{bid}.ssm_v_z"
 }
 
 MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
@@ -191,6 +212,21 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
         MODEL_TENSOR.FFN_DOWN_EXP,
         MODEL_TENSOR.FFN_UP_EXP,
     ],
+    MODEL_ARCH.MAMBA: [
+        MODEL_TENSOR.TOKEN_EMBD,
+        MODEL_TENSOR.OUTPUT_NORM,
+        MODEL_TENSOR.OUTPUT,
+        MODEL_TENSOR.SSM_A_LOG,
+        MODEL_TENSOR.SSM_D,
+        MODEL_TENSOR.SSM_DT1_B_C,
+        MODEL_TENSOR.SSM_DT2,
+        MODEL_TENSOR.SSM_DT_BIAS,
+        MODEL_TENSOR.SSM_NORM,
+        MODEL_TENSOR.SSM_MIX,
+        MODEL_TENSOR.SSM_MIX_BIAS,
+        MODEL_TENSOR.SSM_O,
+        MODEL_TENSOR.SSM_V_Z
+    ]
     MODEL_ARCH.GPTNEOX: [
         MODEL_TENSOR.TOKEN_EMBD,
         MODEL_TENSOR.OUTPUT_NORM,
