@@ -233,6 +233,8 @@ class Params:
             n_ctx = config["max_sequence_length"]
         elif "max_position_embeddings" in config:
             n_ctx = config["max_position_embeddings"]
+        elif "ssm_cfg" in config or "fused_add_norm" in config:
+            n_ctx = 2048
         else:
             raise Exception("failed to guess 'n_ctx'. This model is unknown or unsupported.\n"
                             "Suggestion: provide 'config.json' of the model in the same directory containing model files.")
