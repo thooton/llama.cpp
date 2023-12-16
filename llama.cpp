@@ -8596,6 +8596,9 @@ static void llama_model_quantize_internal(const std::string & fname_inp, const s
         // do not quantize expert gating tensors
         quantize &= name.find("ffn_gate_inp.weight") == std::string::npos;
 
+        // do not quantize SSM transition matrix
+        quantize &= name.find("ssm_a_log") == std::string::npos;
+
         enum ggml_type new_type;
         void * new_data;
         size_t new_size;
