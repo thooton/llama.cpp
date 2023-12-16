@@ -329,6 +329,8 @@ class Params:
         if hf_config_path.exists():
             config = json.load(open(hf_config_path))
             if "ssm_cfg" in config:
+                global ARCH
+                ARCH = gguf.MODEL_ARCH.MAMBA
                 params = Params.loadMambaParamsJson(model_plus.model, config)
             else:
                 params = Params.loadHFTransformerJson(model_plus.model, config)
