@@ -211,9 +211,7 @@ class Params:
         )
 
     @staticmethod
-    def loadHFTransformerJson(model: LazyModel, config_path: Path) -> Params:
-        config = json.load(open(config_path))
-
+    def loadHFTransformerJson(model: LazyModel, config: dict) -> Params:
         rope_scaling_type = f_rope_scale = n_orig_ctx = rope_finetuned = None
         rope_scaling = config.get("rope_scaling")
 
@@ -228,11 +226,8 @@ class Params:
                 rope_finetuned = rope_scaling['finetuned']
             else:
                 raise NotImplementedError(f'Unknown rope scaling type: {typ}')
-        
-        is_mamba = "ssm_cfg" in config
-        if is_mamba:
-            n_ctx = 2048
-        elif "max_sequence_length" in config:
+
+        if "max_sequence_length" in config:
             n_ctx = config["max_sequence_length"]
         elif "max_position_embeddings" in config:
             n_ctx = config["max_position_embeddings"]
@@ -249,15 +244,15 @@ class Params:
 
         return Params(
             n_vocab           = config["vocab_size"],
-            n_embd            = config.get("hidden_size") or config["d_model"],
-            n_layer           = config.get("num_hidden_layers") or config["n_layer"],
+            n_embd            = config["hidden_size"],
+            n_layer           = config["num_hidden_layers"],
             n_ctx             = n_ctx,
-            n_ff              = config["intermediate_size"] if not is_mamba else None,
-            n_head            = (n_head := (config["num_attention_heads"] if not is_mamba else None)),
+            n_ff              = config["intermediate_size"],
+            n_head            = (n_head := config["num_attention_heads"]),
             n_head_kv         = config.get("num_key_value_heads", n_head),
             n_experts         = n_experts,
             n_experts_used    = n_experts_used,
-            f_norm_eps        = config["rms_norm_eps"] if not is_mamba else 1e-5,
+            f_norm_eps        = config["rms_norm_eps"],
             f_rope_freq_base  = config.get("rope_theta"),
             rope_scaling_type = rope_scaling_type,
             f_rope_scale      = f_rope_scale,
@@ -268,9 +263,7 @@ class Params:
     # LLaMA v2 70B params.json
     # {"dim": 8192, "multiple_of": 4096, "ffn_dim_multiplier": 1.3, "n_heads": 64, "n_kv_heads": 8, "n_layers": 80, "norm_eps": 1e-05, "vocab_size": -1}
     @staticmethod
-    def loadOriginalParamsJson(model: LazyModel, config_path: Path) -> Params:
-        config = json.load(open(config_path))
-
+    def loadOriginalParamsJson(model: LazyModel, config: dict) -> Params:
         n_experts      = None
         n_experts_used = None
         f_rope_freq_base = None
@@ -313,14 +306,34 @@ class Params:
         )
 
     @staticmethod
+    def loadMambaParamsJson(model: LazyModel, config: dict) -> Params:
+        return Params(
+            n_vocab             = model["backbone.embedding.weight"].shape[0],
+            n_embd              = config["d_model"],
+            n_layer             = config["n_layer"],
+            n_ctx               = 2048,
+            n_ff                = 1,
+            n_head              = 1,
+            n_head_kv           = 1,
+            n_experts           = None,
+            n_experts_used      = None,
+            f_norm_eps          = 1e-5,
+            f_rope_freq_base    = None
+        )
+
+    @staticmethod
     def load(model_plus: ModelPlus) -> Params:
         hf_config_path   = model_plus.paths[0].parent / "config.json"
         orig_config_path = model_plus.paths[0].parent / "params.json"
 
         if hf_config_path.exists():
-            params = Params.loadHFTransformerJson(model_plus.model, hf_config_path)
+            config = json.load(open(hf_config_path))
+            if "ssm_cfg" in config:
+                params = Params.loadMambaParamsJson(model_plus.model, config)
+            else:
+                params = Params.loadHFTransformerJson(model_plus.model, config)
         elif orig_config_path.exists():
-            params = Params.loadOriginalParamsJson(model_plus.model, orig_config_path)
+            params = Params.loadOriginalParamsJson(model_plus.model, json.load(open(orig_config_path)))
         elif model_plus.format != 'none':
             params = Params.guessed(model_plus.model)
         else:
