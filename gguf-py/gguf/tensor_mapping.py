@@ -273,7 +273,10 @@ class TensorNameMap:
                     tensor_name = TENSOR_NAMES[tensor].format(bid = bid, xid = xid)
                     self.mapping[tensor_name] = (tensor, tensor_name)
                     for key in keys:
-                        key = key.format(bid = bid, xid = xid)
+                        try:
+                            key = key.format(bid = bid, xid = xid)
+                        except Exception:
+                            print(key)
                         self.mapping[key] = (tensor, tensor_name)
 
     def get_type_and_name(self, key: str, try_suffixes: Sequence[str] = ()) -> tuple[MODEL_TENSOR, str] | None:
