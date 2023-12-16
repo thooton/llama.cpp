@@ -17,6 +17,7 @@ class TensorNameMap:
             "tok_embeddings",                            # llama-pth
             "embeddings.word_embeddings",                # bert
             "language_model.embedding.word_embeddings",  # persimmon
+            "backbone.embedding.weight"                  # mamba
         ),
 
         # Token type embeddings
@@ -41,6 +42,7 @@ class TensorNameMap:
             "lm_head",                   # gpt2 mpt falcon llama-hf baichuan qwen
             "output",                    # llama-pth bloom
             "word_embeddings_for_head",  # persimmon
+            "lm_head.weight"             # mamba
         ),
 
         # Output norm
@@ -53,6 +55,7 @@ class TensorNameMap:
             "transformer.norm_f",                      # mpt
             "ln_f",                                    # refact bloom qwen
             "language_model.encoder.final_layernorm",  # persimmon
+            "backbone.norm_f.weight"                   # mamba
         ),
 
         # Rope frequencies
