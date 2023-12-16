@@ -248,8 +248,8 @@ class Params:
 
         return Params(
             n_vocab           = config["vocab_size"],
-            n_embd            = config["hidden_size"],
-            n_layer           = config["num_hidden_layers"],
+            n_embd            = config.get("hidden_size", None) or config["d_model"],
+            n_layer           = config.get("num_hidden_layers", None) or config["n_layer"],
             n_ctx             = n_ctx,
             n_ff              = config["intermediate_size"],
             n_head            = (n_head := config["num_attention_heads"]),
