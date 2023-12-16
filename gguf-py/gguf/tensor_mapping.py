@@ -225,7 +225,7 @@ class TensorNameMap:
         ),
         MODEL_TENSOR.SSM_D: (
             "backbone.layers.{bid}.mixer.D"
-        )
+        ),
         MODEL_TENSOR.SSM_DT1_B_C: (
             "backbone.layers.{bid}.mixer.x_proj.weight"
         ),
