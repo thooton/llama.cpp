@@ -221,34 +221,34 @@ class TensorNameMap:
         ),
 
         MODEL_TENSOR.SSM_A_LOG: (
-            "backbone.layers.{bid}.mixer.A_log"
+            "backbone.layers.{bid}.mixer.A_log",
         ),
         MODEL_TENSOR.SSM_D: (
-            "backbone.layers.{bid}.mixer.D"
+            "backbone.layers.{bid}.mixer.D",
         ),
         MODEL_TENSOR.SSM_DT1_B_C: (
-            "backbone.layers.{bid}.mixer.x_proj.weight"
+            "backbone.layers.{bid}.mixer.x_proj.weight",
         ),
         MODEL_TENSOR.SSM_DT2: (
-            "backbone.layers.{bid}.mixer.dt_proj.weight"
+            "backbone.layers.{bid}.mixer.dt_proj.weight",
         ),
         MODEL_TENSOR.SSM_DT_BIAS: (
-            "backbone.layers.{bid}.mixer.dt_proj.bias"
+            "backbone.layers.{bid}.mixer.dt_proj.bias",
         ),
         MODEL_TENSOR.SSM_NORM: (
-            "backbone.layers.{bid}.norm.weight"
+            "backbone.layers.{bid}.norm.weight",
         ),
         MODEL_TENSOR.SSM_MIX: (
-            "backbone.layers.{bid}.mixer.conv1d.weight"
+            "backbone.layers.{bid}.mixer.conv1d.weight",
         ),
         MODEL_TENSOR.SSM_MIX_BIAS: (
-            "backbone.layers.{bid}.mixer.conv1d.bias"
+            "backbone.layers.{bid}.mixer.conv1d.bias",
         ),
         MODEL_TENSOR.SSM_O: (
-            "backbone.layers.{bid}.mixer.out_proj.weight"
+            "backbone.layers.{bid}.mixer.out_proj.weight",
         ),
         MODEL_TENSOR.SSM_V_Z: (
-            "backbone.layers.{bid}.mixer.in_proj.weight"
+            "backbone.layers.{bid}.mixer.in_proj.weight",
         )
     }
 
