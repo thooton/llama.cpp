@@ -228,13 +228,14 @@ class Params:
                 rope_finetuned = rope_scaling['finetuned']
             else:
                 raise NotImplementedError(f'Unknown rope scaling type: {typ}')
-
-        if "max_sequence_length" in config:
+        
+        is_mamba = "ssm_cfg" in config
+        if is_mamba:
+            n_ctx = 2048
+        elif "max_sequence_length" in config:
             n_ctx = config["max_sequence_length"]
         elif "max_position_embeddings" in config:
             n_ctx = config["max_position_embeddings"]
-        elif "ssm_cfg" in config or "fused_add_norm" in config:
-            n_ctx = 2048
         else:
             raise Exception("failed to guess 'n_ctx'. This model is unknown or unsupported.\n"
                             "Suggestion: provide 'config.json' of the model in the same directory containing model files.")
@@ -248,15 +249,15 @@ class Params:
 
         return Params(
             n_vocab           = config["vocab_size"],
-            n_embd            = config.get("hidden_size", None) or config["d_model"],
-            n_layer           = config.get("num_hidden_layers", None) or config["n_layer"],
+            n_embd            = config.get("hidden_size") or config["d_model"]
+            n_layer           = config.get("num_hidden_layers") or config["n_layer"]
             n_ctx             = n_ctx,
-            n_ff              = config["intermediate_size"],
-            n_head            = (n_head := config["num_attention_heads"]),
-            n_head_kv         = config.get("num_key_value_heads", n_head),
+            n_ff              = config["intermediate_size"] or config["d_model"] * 2
+            n_head            = (n_head := config["num_attention_heads"]) if is_mamba else None,
+            n_head_kv         = config.get("num_key_value_heads", n_head)
             n_experts         = n_experts,
             n_experts_used    = n_experts_used,
-            f_norm_eps        = config["rms_norm_eps"],
+            f_norm_eps        = config["rms_norm_eps"] if not is_mamba else 1e-5,
             f_rope_freq_base  = config.get("rope_theta"),
             rope_scaling_type = rope_scaling_type,
             f_rope_scale      = f_rope_scale,
