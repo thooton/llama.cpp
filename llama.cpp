@@ -4647,6 +4647,7 @@ struct llm_build_context {
         );
         cb(db_i_buf, "db_i_buf", -1);
         for (int il = 0; il < n_layer; ++il) {
+            LLAMA_LOG_INFO("layer %d", il);
             // x_norm: n_embd, n_tokens
             ggml_cpy_inplace(ctx0, x, x_norm);
             ggml_rms_norm_inplace(ctx0, x_norm, hparams.f_norm_rms_eps);
@@ -4744,19 +4745,14 @@ struct llm_build_context {
     n, (int)(t)->ne[0], (int)(t)->ne[1],                \
     (int)(t)->ne[2], (int)(t)->ne[3]                    \
 )
-            DEBUG_SHAPE("v_mix", v_mix);
-            DEBUG_SHAPE("v_pre", v_pre);
             ggml_mul_inplace(ctx0, v_pre, v_mix);
-            DEBUG_SHAPE("v_pre2", v_pre);
             // n_conv, n_inner, n_tokens
             v_pre = ggml_permute(ctx0, v_pre, 1, 2, 0, 3);
-            DEBUG_SHAPE("v_pre3", v_pre);
             // 1, n_inner, n_tokens
             struct ggml_tensor* v = ggml_sum_rows(ctx0, v_pre);
             cb(v, "v", il);
             // n_inner, n_tokens
             v = ggml_permute(ctx0, v, 3, 0, 1, 2);
-            DEBUG_SHAPE("v", v);
             ggml_add_inplace(ctx0, v, model.layers[il].ssm_mix_bias);
             ggml_silu_inplace(ctx0, v);
             // r_dt + (2 * n_state), n_tokens
