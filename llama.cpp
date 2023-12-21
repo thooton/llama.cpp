@@ -3196,16 +3196,17 @@ static void llm_load_tensors(
 
                         auto & layer = model.layers[i];
 
-                        layer.ssm_a_log = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_A_LOG, i),        {n_inner, n_state}, backend_split);
-                        layer.ssm_d = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_D, i),                {n_inner}, backend_split);
-                        layer.ssm_dt1_b_c = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_DT1_B_C, i),    {n_embd, r_dt + (2 * n_state)}, backend_split);
-                        layer.ssm_dt2 = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_DT2, i),            {r_dt, n_inner}, backend_split);
-                        layer.ssm_dt_bias = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_DT_BIAS, i),    {n_inner}, backend_split);
-                        layer.ssm_norm = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_NORM, i),          {n_embd}, backend_split);
-                        layer.ssm_mix = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_MIX, i),            {n_conv, 1, n_embd}, backend_split);
-                        layer.ssm_mix_bias = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_MIX_BIAS, i),  {n_embd}, backend_split);
-                        layer.ssm_o = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_O, i),                {n_inner, n_embd}, backend_split);
-                        layer.ssm_v_z = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_V_Z, i),            {n_embd, 2 * n_inner}, backend_split);
+                        layer.ssm_a_log   = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_A_LOG,  i),  {n_inner, n_state},  backend_split);
+                        layer.ssm_d       = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_D, i),      {n_inner},             backend_split);
+                        layer.ssm_dt1_b_c = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_DT1_B_C, "weight", i), {n_embd, r_dt + (2 * n_state)}, backend_split);
+                        layer.ssm_dt2     = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_DT2, "weight", i),     {r_dt, n_inner},             backend_split);
+                        layer.ssm_dt_bias = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_DT2, "weight", i),     {n_inner},             backend_split);
+                        layer.ssm_norm    = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_NORM, i),       {n_embd},             backend_split);
+                        layer.ssm_mix     = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_MIX, i),         {n_conv, 1, n_embd},   backend_split);
+                        layer.ssm_mix_bias = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_MIX_BIAS, i),   {n_embd},             backend_split);
+                        layer.ssm_o       = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_O, "weight", i),       {n_inner, n_embd},   backend_split);
+                        layer.ssm_v_z     = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_V_Z, "weight", i),     {n_embd, 2 * n_inner}, backend_split);
+
 
                         if (backend == GGML_BACKEND_GPU) {
                             vram_weights += ggml_nbytes(layer.ssm_a_log);
@@ -8928,9 +8929,6 @@ static void llama_model_quantize_internal(const std::string & fname_inp, const s
 
         // do not quantize expert gating tensors
         quantize &= name.find("ffn_gate_inp.weight") == std::string::npos;
-
-        // do not quantize SSM transition matrix
-        quantize &= name.find("ssm_a_log") == std::string::npos;
 
         enum ggml_type new_type;
         void * new_data;

@@ -227,13 +227,10 @@ class TensorNameMap:
             "backbone.layers.{bid}.mixer.D",
         ),
         MODEL_TENSOR.SSM_DT1_B_C: (
-            "backbone.layers.{bid}.mixer.x_proj.weight",
+            "backbone.layers.{bid}.mixer.x_proj",
         ),
         MODEL_TENSOR.SSM_DT2: (
-            "backbone.layers.{bid}.mixer.dt_proj.weight",
-        ),
-        MODEL_TENSOR.SSM_DT_BIAS: (
-            "backbone.layers.{bid}.mixer.dt_proj.bias",
+            "backbone.layers.{bid}.mixer.dt_proj",
         ),
         MODEL_TENSOR.SSM_NORM: (
             "backbone.layers.{bid}.norm.weight",
@@ -245,10 +242,10 @@ class TensorNameMap:
             "backbone.layers.{bid}.mixer.conv1d.bias",
         ),
         MODEL_TENSOR.SSM_O: (
-            "backbone.layers.{bid}.mixer.out_proj.weight",
+            "backbone.layers.{bid}.mixer.out_proj",
         ),
         MODEL_TENSOR.SSM_V_Z: (
-            "backbone.layers.{bid}.mixer.in_proj.weight",
+            "backbone.layers.{bid}.mixer.in_proj",
         )
     }
 
