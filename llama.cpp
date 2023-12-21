@@ -92,6 +92,7 @@
 #endif
 
 #define LLAMA_MAX_NODES   8192
+#define MAMBA_MAX_NODES (LLAMA_MAX_NODES*32)
 #define LLAMA_MAX_EXPERTS 8
 
 //
@@ -4600,7 +4601,7 @@ struct llm_build_context {
     }
 
     struct ggml_cgraph* build_mamba() {
-        struct ggml_cgraph* gf = ggml_new_graph_custom(ctx0, 512 * LLAMA_MAX_NODES, false);
+        struct ggml_cgraph* gf = ggml_new_graph_custom(ctx0, MAMBA_MAX_NODES, false);
         // used in softplus approximation
         struct ggml_tensor* three = ggml_new_f32(ctx0, 3.0);
         cb(three, "three", -1);
@@ -9662,7 +9663,11 @@ struct llama_context * llama_new_context_with_model(
         {
             static const size_t tensor_alignment = 32;
             // the compute buffer is used to store the tensor and graph structs, while the allocator buffer is used for the tensor data
-            ctx->buf_compute.resize(ggml_tensor_overhead()*LLAMA_MAX_NODES + ggml_graph_overhead());
+            ctx->buf_compute.resize(ggml_tensor_overhead()*(
+                model->arch != LLM_ARCH_MAMBA
+                ? LLAMA_MAX_NODES
+                : MAMBA_MAX_NODES
+            ) + ggml_graph_overhead());
 
             // create measure allocator
             ctx->alloc = ggml_allocr_new_measure(tensor_alignment);
