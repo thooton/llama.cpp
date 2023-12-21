@@ -4384,7 +4384,12 @@ struct llm_build_context {
         do_rope_shift (worst_case || kv_self.has_shift),
         cb            (cb),
         buf_compute   (lctx.buf_compute) {
-            GGML_ASSERT(!!kv_self.ctx);
+            if (model.arch == LLM_ARCH_MAMBA) {
+                GGML_ASSERT(!!vh_self.ctx);
+            } else {
+                GGML_ASSERT(!!kv_self.ctx);
+            }
+            
 
             // all initializations should be done in init()
         }
