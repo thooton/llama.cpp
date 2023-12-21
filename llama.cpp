@@ -4617,10 +4617,10 @@ struct llm_build_context {
         const int64_t n_state = 16;
         const int64_t n_conv = 4;
         // n_inner, n_tokens, n_conv
-        struct ggml_tensor* v_pre = ggml_new_tensor_3d(
+        struct ggml_tensor* v_pre_buf = ggml_new_tensor_3d(
             ctx0, x->type, n_inner, n_tokens, n_conv
         );
-        cb(v_pre, "v_pre", -1);
+        cb(v_pre_buf, "v_pre_buf", -1);
         // n_embd, n_tokens
         struct ggml_tensor* x_norm = ggml_new_tensor_2d(
             ctx0, x->type, n_embd, n_tokens
@@ -4642,10 +4642,10 @@ struct llm_build_context {
         );
         cb(da_i, "da_i", -1);
         // n_inner, n_state
-        struct ggml_tensor* db_buf = ggml_new_tensor_2d(
+        struct ggml_tensor* db_i_buf = ggml_new_tensor_2d(
             ctx0, x->type, n_inner, n_state
         );
-        cb(db_buf, "db_buf", -1);
+        cb(db_i_buf, "db_i_buf", -1);
         for (int il = 0; il < n_layer; ++il) {
             // x_norm: n_embd, n_tokens
             ggml_cpy_inplace(ctx0, x, x_norm);
@@ -4660,7 +4660,8 @@ struct llm_build_context {
                 vz->nb[1], ggml_element_size(vz) * n_inner
             );
             ggml_silu_inplace(ctx0, z);
-            // v_pre: n_inner, n_tokens, n_conv
+            // n_inner, n_tokens, n_conv
+            struct ggml_tensor* v_pre = v_pre_buf;
             ggml_cpy_inplace(ctx0,
                 ggml_view_2d(
                     ctx0, vz, n_inner, n_tokens, vz->nb[1], 0
@@ -4813,7 +4814,7 @@ struct llm_build_context {
                 ));
                 about_exp_inplace(ctx0, da_i, three, negative_three, cb, il);
                 // n_inner, n_state
-                struct ggml_tensor* db_i = db_buf;
+                struct ggml_tensor* db_i = db_i_buf;
                 for (int64_t i = 0; i < n_state; i++) {
                     ggml_cpy_inplace(ctx0, dt_i, ggml_view_1d(
                         ctx0, db_i, n_inner,
