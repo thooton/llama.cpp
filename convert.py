@@ -1041,7 +1041,7 @@ def pick_output_type(model: LazyModel, output_type_str: str | None) -> GGMLFileT
     if ARCH == gguf.MODEL_ARCH.LLAMA:
         wq_type = model[gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.ATTN_Q].format(bid=0) + ".weight"].data_type
     else:
-        wq_type = model[gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.SSM_V_Z].format(bid=0)].data_type
+        wq_type = model[gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.SSM_V_Z].format(bid=0) + ".weight"].data_type
 
     if output_type_str == "f32" or (output_type_str is None and wq_type == DT_F32):
         return GGMLFileType.AllF32
