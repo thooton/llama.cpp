@@ -17,7 +17,7 @@ class TensorNameMap:
             "tok_embeddings",                            # llama-pth
             "embeddings.word_embeddings",                # bert
             "language_model.embedding.word_embeddings",  # persimmon
-            "backbone.embedding.weight"                  # mamba
+            "backbone.embedding"                         # mamba
         ),
 
         # Token type embeddings
@@ -39,10 +39,9 @@ class TensorNameMap:
         # Output
         MODEL_TENSOR.OUTPUT: (
             "embed_out",                 # gptneox
-            "lm_head",                   # gpt2 mpt falcon llama-hf baichuan qwen
+            "lm_head",                   # gpt2 mpt falcon llama-hf baichuan qwen mamba
             "output",                    # llama-pth bloom
             "word_embeddings_for_head",  # persimmon
-            "lm_head.weight"             # mamba
         ),
 
         # Output norm

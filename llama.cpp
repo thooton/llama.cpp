@@ -3157,7 +3157,7 @@ static void llm_load_tensors(
         switch (model.arch) {
             case LLM_ARCH_MAMBA:
                 {
-                    model.tok_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD), {n_embd, n_vocab}, GGML_BACKEND_CPU);
+                    model.tok_embd = ml.create_tensor(ctx, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, GGML_BACKEND_CPU);
                     // output
                     {
                         ggml_backend_type backend_norm;
@@ -3171,8 +3171,8 @@ static void llm_load_tensors(
                             backend_output = GGML_BACKEND_CPU;
                         }
 
-                        model.output_norm = ml.create_tensor(ctx, tn(LLM_TENSOR_OUTPUT_NORM), {n_embd},          backend_norm);
-                        model.output      = ml.create_tensor(ctx, tn(LLM_TENSOR_OUTPUT),      {n_embd, n_vocab}, backend_output);
+                        model.output_norm = ml.create_tensor(ctx, tn(LLM_TENSOR_OUTPUT_NORM), {n_embd}, backend_norm);
+                        model.output      = ml.create_tensor(ctx, tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, backend_output);
 
                         if (backend_norm == GGML_BACKEND_GPU) {
                             vram_weights += ggml_nbytes(model.output_norm);
