@@ -4711,7 +4711,7 @@ struct llm_build_context {
             // n_inner, 1, n_conv
             v_mix = ggml_permute(ctx0, v_mix, 2, 1, 0, 3);
 #define DEBUG_SHAPE(n, t) LLAMA_LOG_INFO(   \
-    "%s: %d, %d, %d, %d",                   \
+    "%s: %d, %d, %d, %d\n",                   \
     n, (int)(t)->ne[0], (int)(t)->ne[1],                \
     (int)(t)->ne[2], (int)(t)->ne[3]                    \
 )
@@ -4725,6 +4725,7 @@ struct llm_build_context {
             cb(v, "v", il);
             // n_inner, n_tokens
             v = ggml_permute(ctx0, v, 1, 2, 3, 0);
+            DEBUG_SHAPE("v", v);
             ggml_add_inplace(ctx0, v, model.layers[il].ssm_mix_bias);
             ggml_silu_inplace(ctx0, v);
             // r_dt + (2 * n_state), n_tokens
@@ -4747,6 +4748,7 @@ struct llm_build_context {
             // n_inner, n_tokens
             struct ggml_tensor* dt = ggml_mul_mat(ctx0, model.layers[il].ssm_dt2, dt1);
             cb(dt, "dt", il);
+            DEBUG_SHAPE("dt", dt);
             ggml_add_inplace(ctx0, dt, model.layers[il].ssm_dt_bias);
             // dt = softplus(dt) = ln(1 + e**x)
             // TODO don't approximate e^x
@@ -4788,6 +4790,9 @@ struct llm_build_context {
                 about_exp_inplace(ctx0, da_i, three, negative_three, cb, il);
                 struct ggml_tensor* db_i = ggml_out_prod(ctx0, b_i, dt_i);
                 cb(db_i, "db_i", il);
+                DEBUG_SHAPE("h", h);
+                DEBUG_SHAPE("da_i", da_i);
+                DEBUG_SHAPE("db_i", db_i);
                 // h[i] = h[i-1] * dA + v[i] * dB
                 ggml_mul_inplace(ctx0, h, da_i);
                 ggml_mul_inplace(ctx0, db_i, v_i);
