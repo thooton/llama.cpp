@@ -3103,7 +3103,6 @@ static void llm_load_tensors(
     size_t mmapped_size;
 
     ml.calc_sizes(ctx_size, mmapped_size);
-    ctx_size += (int)1e9;
 
     LLAMA_LOG_INFO("%s: ggml ctx size = %7.2f MiB\n", __func__, ctx_size/1024.0/1024.0);
 
@@ -4600,7 +4599,7 @@ struct llm_build_context {
     }
 
     struct ggml_cgraph* build_mamba() {
-        struct ggml_cgraph* gf = ggml_new_graph_custom(ctx0, 8 * LLAMA_MAX_NODES, false);
+        struct ggml_cgraph* gf = ggml_new_graph_custom(ctx0, 512 * LLAMA_MAX_NODES, false);
         // used in softplus approximation
         struct ggml_tensor* three = ggml_new_f32(ctx0, 3.0);
         cb(three, "three", -1);
@@ -4615,10 +4614,40 @@ struct llm_build_context {
         const int64_t r_dt = (int64_t)((n_embd / 16.0) + 0.5);
         const int64_t n_state = 16;
         const int64_t n_conv = 4;
+        // n_inner, n_tokens, n_conv
+        struct ggml_tensor* v_pre = ggml_new_tensor_3d(
+            ctx0, x->type, n_inner, n_tokens, n_conv
+        );
+        cb(v_pre, "v_pre", -1);
+        // n_embd, n_tokens
+        struct ggml_tensor* x_norm = ggml_new_tensor_2d(
+            ctx0, x->type, n_embd, n_tokens
+        );
+        cb(x_norm, "x_norm", -1);
+        // n_inner, n_tokens
+        struct ggml_tensor* y = ggml_new_tensor_2d(
+            ctx0, x->type, n_inner, n_tokens
+        );
+        cb(y, "y", -1);
+        // n_state, n_inner
+        struct ggml_tensor* a = ggml_new_tensor_2d(
+            ctx0, x->type, n_state, n_inner
+        );
+        cb(a, "a", -1);
+        // n_state, n_inner
+        struct ggml_tensor* da_i = ggml_new_tensor_2d(
+            ctx0, x->type, n_state, n_inner
+        );
+        cb(da_i, "da_i", -1);
+        // n_inner, n_state
+        struct ggml_tensor* db_buf = ggml_new_tensor_2d(
+            ctx0, x->type, n_inner, n_state
+        );
+        cb(db_buf, "db_buf", -1);
         for (int il = 0; il < n_layer; ++il) {
-            // n_embd, n_tokens
-            struct ggml_tensor* x_norm = ggml_rms_norm(ctx0, x, hparams.f_norm_rms_eps);
-            cb(x_norm, "x_norm", il);
+            // x_norm: n_embd, n_tokens
+            ggml_cpy_inplace(ctx0, x, x_norm);
+            ggml_rms_norm_inplace(ctx0, x_norm, hparams.f_norm_rms_eps);
             ggml_mul_inplace(ctx0, x, model.layers[il].ssm_norm);
             // 2 * n_inner, n_tokens
             struct ggml_tensor* vz = ggml_mul_mat(ctx0, model.layers[il].ssm_v_z, x_norm);
@@ -4629,11 +4658,7 @@ struct llm_build_context {
                 vz->nb[1], ggml_element_size(vz) * n_inner
             );
             ggml_silu_inplace(ctx0, z);
-            // n_inner, n_tokens, n_conv
-            struct ggml_tensor* v_pre = ggml_new_tensor_3d(
-                ctx0, vz->type, n_inner, n_tokens, n_conv
-            );
-            cb(v_pre, "v_pre", il);
+            // v_pre: n_inner, n_tokens, n_conv
             ggml_cpy_inplace(ctx0,
                 ggml_view_2d(
                     ctx0, vz, n_inner, n_tokens, vz->nb[1], 0
@@ -4758,18 +4783,12 @@ struct llm_build_context {
             about_exp_inplace(ctx0, dt, three, negative_three, cb, il);
             ggml_add1_inplace(ctx0, dt, one);
             ggml_log_inplace(ctx0, dt);
-            // n_state, n_inner
-            struct ggml_tensor* a = ggml_dup(ctx0, model.layers[il].ssm_a_log);
-            cb(a, "a", il);
+            // a: n_state, n_inner
+            ggml_cpy_inplace(ctx0, model.layers[il].ssm_a_log, a);
             about_exp_inplace(ctx0, a, three, negative_three, cb, il);
             ggml_neg_inplace(ctx0, a);
             // n_state, n_inner
             struct ggml_tensor* h = vh_self.h_l[il];
-            // n_inner, n_tokens
-            struct ggml_tensor* y = ggml_new_tensor_2d(
-                ctx0, v->type, n_inner, n_tokens
-            );
-            cb(y, "y", il);
             for (int64_t i = 0; i < n_tokens; i++) {
                 // n_inner
                 struct ggml_tensor* v_i = ggml_view_1d(
@@ -4785,23 +4804,36 @@ struct llm_build_context {
                 struct ggml_tensor* c_i = ggml_view_1d(
                     ctx0, c, n_state, ggml_element_size(c) * n_state * i
                 );
-                // n_state, n_inner
-                struct ggml_tensor* da_i = ggml_mul(
-                    ctx0, a, ggml_reshape_2d(ctx0, dt_i, 1, n_inner)
-                );
-                cb(da_i, "da_i", il);
+                // da_i: n_state, n_inner
+                ggml_cpy_inplace(ctx0, a, da_i);
+                ggml_mul_inplace(ctx0, da_i, ggml_reshape_2d(
+                    ctx0, dt_i, 1, n_inner
+                ));
                 about_exp_inplace(ctx0, da_i, three, negative_three, cb, il);
-                struct ggml_tensor* db_i = ggml_out_prod(ctx0, b_i, dt_i);
-                cb(db_i, "db_i", il);
+                // n_inner, n_state
+                struct ggml_tensor* db_i = db_buf;
+                for (int64_t i = 0; i < n_state; i++) {
+                    ggml_cpy_inplace(ctx0, dt_i, ggml_view_1d(
+                        ctx0, db_i, n_inner,
+                        ggml_element_size(db_i) * i * n_inner
+                    ));
+                }
+                ggml_mul_inplace(ctx0, db_i, ggml_reshape_2d(
+                    ctx0, b_i, 1, n_state
+                ));
+                // n_state, n_inner
+                db_i = ggml_transpose(ctx0, db_i);
+                ggml_cont_inplace(ctx0, db_i);
                 // h[i] = h[i-1] * dA + v[i] * dB
                 ggml_mul_inplace(ctx0, h, da_i);
-                ggml_mul_inplace(
-                    ctx0, db_i, ggml_reshape_2d(ctx0, v_i, 1, n_inner)
-                );
+                ggml_mul_inplace(ctx0, db_i, ggml_reshape_2d(
+                    ctx0, v_i, 1, n_inner
+                ));
                 ggml_add_inplace(ctx0, h, db_i);
                 // n_inner
                 struct ggml_tensor* y_i = ggml_mul_mat(ctx0, h, c_i);
                 cb(y_i, "y_i", il);
+                // y: n_inner, n_tokens
                 ggml_cpy_inplace(ctx0, y_i, ggml_view_1d(
                     ctx0, y, n_inner, ggml_element_size(y) * n_inner * i
                 ));
