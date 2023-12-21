@@ -3196,7 +3196,7 @@ static void llm_load_tensors(
 
                         auto & layer = model.layers[i];
 
-                        layer.ssm_a_log   = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_A_LOG,  i),  {n_inner, n_state},  backend_split);
+                        layer.ssm_a_log   = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_A_LOG,  i),  {n_state, n_inner},  backend_split);
                         layer.ssm_d       = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_D, i),      {n_inner},             backend_split);
                         layer.ssm_dt1_b_c = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_DT1_B_C, "weight", i), {n_embd, r_dt + (2 * n_state)}, backend_split);
                         layer.ssm_dt2     = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_DT2, "weight", i),     {r_dt, n_inner},             backend_split);
