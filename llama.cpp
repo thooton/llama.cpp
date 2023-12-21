@@ -1400,7 +1400,7 @@ struct llama_vh_cache {
     std::vector<struct ggml_tensor*> h_l;
     struct ggml_context* ctx = NULL;
     llama_buffer buf;
-    ~llama_hstate_cache() {
+    ~llama_vh_cache() {
         if (ctx) {
             ggml_free(ctx);
         }
@@ -1413,7 +1413,7 @@ struct llama_vh_cache {
         }
 #endif
     }
-}
+};
 
 struct llama_vocab {
     using id    = int32_t;
@@ -1735,7 +1735,7 @@ static bool llama_vh_cache_init(
 #endif // GGML_USE_CUBLAS
     }
 
-    if (vram_kv_cache > 0) {
+    if (vram_vh_cache > 0) {
         LLAMA_LOG_INFO("%s: VRAM vh self = %.2f MB\n", __func__, vram_vh_cache / 1024.0 / 1024.0);
     }
 
@@ -4624,7 +4624,7 @@ struct llm_build_context {
             ggml_silu_inplace(ctx0, z);
             // n_inner, n_tokens, n_conv
             struct ggml_tensor* v_pre = ggml_new_tensor_3d(
-                ctx0, v->type, n_inner, n_tokens, n_conv
+                ctx0, vz->type, n_inner, n_tokens, n_conv
             );
             cb(v_pre, "v_pre", il);
             ggml_cpy_inplace(ctx0,
@@ -4721,7 +4721,7 @@ struct llm_build_context {
             struct ggml_tensor* dt1 = ggml_view_2d(
                 ctx0, dt1bc, r_dt, n_tokens,
                 dt1bc->nb[1], 0
-            )
+            );
             // n_state, n_tokens
             struct ggml_tensor* b = ggml_view_2d(
                 ctx0, dt1bc, n_state, n_tokens,
@@ -4730,7 +4730,7 @@ struct llm_build_context {
             struct ggml_tensor* c = ggml_view_2d(
                 ctx0, dt1bc, n_state, n_tokens,
                 dt1bc->nb[1], ggml_element_size(dt1bc) * (r_dt + n_state)
-            )
+            );
             // n_inner, n_tokens
             struct ggml_tensor* dt = ggml_mul_mat(ctx0, model.layers[il].ssm_dt2, dt1);
             cb(dt, "dt", il);
@@ -9557,7 +9557,7 @@ struct llama_context * llama_new_context_with_model(
                 return nullptr;
             }
         } else {
-            if (!llama_vh_cache_init(ctx->model.hparams, ctx->vh_self, type_k, type_v, cparams.n_ctx, model->n_gpu_layers, cparams.offload_kqv)) {
+            if (!llama_vh_cache_init(ctx->model.hparams, ctx->vh_self, type_k, type_v, model->n_gpu_layers, cparams.offload_kqv)) {
                 LLAMA_LOG_ERROR("%s: llama_vh_cache_init() failed for recurrence cache\n", __func__);
                 llama_free(ctx);
                 return nullptr;
@@ -9570,13 +9570,13 @@ struct llama_context * llama_new_context_with_model(
             size_t memory_size_2 = 0;
             const char* name_1 = "K";
             const char* name_2 = "V";
-            if (model.arch == LLM_ARCH_MAMBA) {
+            if (model->arch == LLM_ARCH_MAMBA) {
                 name_1 = "V";
                 name_2 = "H";
             }
 
             for (auto & one : (
-                model.arch != LLM_ARCH_MAMBA
+                model->arch != LLM_ARCH_MAMBA
                 ? ctx->kv_self.k_l
                 : ctx->vh_self.v_l
             )) {
@@ -9584,7 +9584,7 @@ struct llama_context * llama_new_context_with_model(
             }
 
             for (auto & two : (
-                model.arch != LLM_ARCH_MAMBA
+                model->arch != LLM_ARCH_MAMBA
                 ? ctx->kv_self.v_l
                 : ctx->vh_self.h_l
             )) {
