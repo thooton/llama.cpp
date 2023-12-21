@@ -4784,10 +4784,8 @@ struct llm_build_context {
                 struct ggml_tensor* c_i = ggml_view_1d(
                     ctx0, c, n_state, ggml_element_size(c) * n_state * i
                 );
-                // 1, n_inner
-                dt_i = ggml_reshape_2d(ctx0, dt_i, 1, n_inner);
                 // n_state, n_inner
-                struct ggml_tensor* da_i = ggml_mul(ctx0, a, dt_i);
+                struct ggml_tensor* da_i = ggml_mul(ctx0, a, ggml_reshape_2d(ctx0, dt_i, 1, n_inner));
                 cb(da_i, "da_i", il);
                 about_exp_inplace(ctx0, da_i, three, negative_three, cb, il);
                 DEBUG_SHAPE("h", h);
