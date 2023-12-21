@@ -3104,7 +3104,6 @@ static void llm_load_tensors(
     size_t mmapped_size;
 
     ml.calc_sizes(ctx_size, mmapped_size);
-    ctx_size += (int)10e9;
 
     LLAMA_LOG_INFO("%s: ggml ctx size = %7.2f MiB\n", __func__, ctx_size/1024.0/1024.0);
 
