@@ -3104,7 +3104,7 @@ static void llm_load_tensors(
     size_t mmapped_size;
 
     ml.calc_sizes(ctx_size, mmapped_size);
-    ctx_size += (int)5e9;
+    ctx_size += (int)10e9;
 
     LLAMA_LOG_INFO("%s: ggml ctx size = %7.2f MiB\n", __func__, ctx_size/1024.0/1024.0);
 
@@ -4647,7 +4647,7 @@ struct llm_build_context {
         );
         cb(db_i_buf, "db_i_buf", -1);
         for (int il = 0; il < n_layer; ++il) {
-            LLAMA_LOG_INFO("layer %d", il);
+            LLAMA_LOG_INFO("layer %d\n", il);
             // x_norm: n_embd, n_tokens
             ggml_cpy_inplace(ctx0, x, x_norm);
             ggml_rms_norm_inplace(ctx0, x_norm, hparams.f_norm_rms_eps);
@@ -4775,7 +4775,6 @@ struct llm_build_context {
             // n_inner, n_tokens
             struct ggml_tensor* dt = ggml_mul_mat(ctx0, model.layers[il].ssm_dt2, dt1);
             cb(dt, "dt", il);
-            DEBUG_SHAPE("dt", dt);
             ggml_add_inplace(ctx0, dt, model.layers[il].ssm_dt_bias);
             // dt = softplus(dt) = ln(1 + e**x)
             // TODO don't approximate e^x
