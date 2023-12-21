@@ -4790,14 +4790,8 @@ struct llm_build_context {
                 );
                 cb(da_i, "da_i", il);
                 about_exp_inplace(ctx0, da_i, three, negative_three, cb, il);
-                DEBUG_SHAPE("h", h);
-                DEBUG_SHAPE("da_i", da_i);
-                DEBUG_SHAPE("a", a);
-                DEBUG_SHAPE("dt_i", dt_i);
-                DEBUG_SHAPE("b_i", b_i);
                 struct ggml_tensor* db_i = ggml_out_prod(ctx0, b_i, dt_i);
                 cb(db_i, "db_i", il);
-                DEBUG_SHAPE("db_i", db_i);
                 // h[i] = h[i-1] * dA + v[i] * dB
                 ggml_mul_inplace(ctx0, h, da_i);
                 ggml_mul_inplace(
