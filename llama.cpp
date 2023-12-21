@@ -4718,9 +4718,10 @@ struct llm_build_context {
             DEBUG_SHAPE("v_mix", v_mix);
             DEBUG_SHAPE("v_pre", v_pre);
             ggml_mul_inplace(ctx0, v_pre, v_mix);
+            DEBUG_SHAPE("v_pre2", v_pre);
             // n_conv, n_inner, n_tokens
             v_pre = ggml_permute(ctx0, v_pre, 2, 0, 1, 3);
-            DEBUG_SHAPE("v_pre2", v_pre);
+            DEBUG_SHAPE("v_pre3", v_pre);
             // 1, n_inner, n_tokens
             struct ggml_tensor* v = ggml_sum_rows(ctx0, v_pre);
             cb(v, "v", il);
