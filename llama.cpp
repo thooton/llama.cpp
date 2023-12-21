@@ -3203,7 +3203,7 @@ static void llm_load_tensors(
                         layer.ssm_dt_bias = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_DT2, "bias", i),     {n_inner},             backend_split);
                         layer.ssm_norm    = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_NORM, i),       {n_embd},             backend_split);
                         layer.ssm_mix     = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_MIX, i),         {n_conv, 1, n_inner},   backend_split);
-                        layer.ssm_mix_bias = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_MIX_BIAS, i),   {n_embd},             backend_split);
+                        layer.ssm_mix_bias = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_MIX_BIAS, i),   {n_inner},             backend_split);
                         layer.ssm_o       = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_O, "weight", i),       {n_inner, n_embd},   backend_split);
                         layer.ssm_v_z     = ml.create_tensor(ctx,  tn(LLM_TENSOR_SSM_V_Z, "weight", i),     {n_embd, 2 * n_inner}, backend_split);
 
