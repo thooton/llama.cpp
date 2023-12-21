@@ -1394,6 +1394,27 @@ struct llama_kv_cache {
     }
 };
 
+// cached value + hidden state data
+struct llama_vh_cache {
+    std::vector<struct ggml_tensor*> v_l;
+    std::vector<struct ggml_tensor*> h_l;
+    struct ggml_context* ctx = NULL;
+    llama_buffer buf;
+    ~llama_hstate_cache() {
+        if (ctx) {
+            ggml_free(ctx);
+        }
+#ifdef GGML_USE_CUBLAS
+        if (ggml_cublas_loaded()) {
+            for (size_t i = 0; i < v_l.size(); ++i) {
+                ggml_cuda_free_data(v_l[i]);
+                ggml_cuda_free_data(h_l[i]);
+            }
+        }
+#endif
+    }
+}
+
 struct llama_vocab {
     using id    = int32_t;
     using token = std::string;
@@ -1531,6 +1552,8 @@ struct llama_context {
 
     // key + value cache for the self attention
     struct llama_kv_cache kv_self;
+    // value + hidden state cache for the recurrence
+    struct llama_vh_cache vh_self;
 
     std::mt19937 rng;
 
@@ -1643,6 +1666,77 @@ static bool llama_kv_cache_init(
 
     if (vram_kv_cache > 0) {
         LLAMA_LOG_INFO("%s: VRAM kv self = %.2f MB\n", __func__, vram_kv_cache / 1024.0 / 1024.0);
+    }
+
+    GGML_UNUSED(n_gpu_layers);
+
+    return true;
+}
+
+static bool llama_vh_cache_init(
+        const struct llama_hparams & hparams,
+             struct llama_vh_cache & cache,
+                         ggml_type   vtype,
+                         ggml_type   htype,
+                               int   n_gpu_layers,
+                              bool   offload) {
+    const uint32_t n_inner = 2 * hparams.n_embd;
+    const uint32_t n_layer = hparams.n_layer;
+    const uint32_t n_state = 16;
+    const uint32_t n_conv  = 4;
+
+    const int64_t n_elements_v = n_inner * (n_conv - 1) * n_layer;
+    const int64_t n_elements_h = n_state * n_inner * n_layer;
+
+    cache.buf.resize(
+        ggml_row_size(vtype, n_elements_v)
+        + ggml_row_size(htype, n_elements_h)
+        + 2u*n_layer*ggml_tensor_overhead()
+    );
+    memset(cache.buf.data, 0, cache.buf.size);
+
+    struct ggml_init_params params;
+    params.mem_size   = cache.buf.size;
+    params.mem_buffer = cache.buf.data;
+    params.no_alloc   = false;
+
+    cache.ctx = ggml_init(params);
+
+    size_t vram_vh_cache = 0;
+
+    if (!cache.ctx) {
+        LLAMA_LOG_ERROR("%s: failed to allocate memory for vh cache\n", __func__);
+        return false;
+    }
+
+    cache.v_l.reserve(n_layer);
+    cache.h_l.reserve(n_layer);
+
+    const int i_gpu_start = (int) n_layer - n_gpu_layers; GGML_UNUSED(i_gpu_start);
+
+    GGML_UNUSED(offload);
+
+    for (int i = 0; i < (int) n_layer; i++) {
+        ggml_tensor * v = ggml_new_tensor_2d(cache.ctx, vtype, n_inner, n_conv - 1);
+        ggml_tensor * h = ggml_new_tensor_2d(cache.ctx, htype, n_state, n_inner);
+        ggml_format_name(v, "cache_v_l%d", i);
+        ggml_format_name(h, "cache_h_l%d", i);
+        cache.v_l.push_back(v);
+        cache.h_l.push_back(h);
+#ifdef GGML_USE_CUBLAS
+        if (i >= i_gpu_start) {
+            if (offload) {
+                ggml_cuda_assign_buffers_no_scratch(v);
+                vram_vh_cache += ggml_nbytes(v);
+                ggml_cuda_assign_buffers_no_scratch(h);
+                vram_vh_cache += ggml_nbytes(h);
+            }
+        }
+#endif // GGML_USE_CUBLAS
+    }
+
+    if (vram_kv_cache > 0) {
+        LLAMA_LOG_INFO("%s: VRAM vh self = %.2f MB\n", __func__, vram_vh_cache / 1024.0 / 1024.0);
     }
 
     GGML_UNUSED(n_gpu_layers);
@@ -2583,7 +2677,7 @@ static void llm_load_hparams(
             } break;
         case LLM_ARCH_MAMBA:
             {
-                ml.get_key(LLM_KV_ATTENTION_LAYERNORM_EPS, hparams.f_norm_eps);
+                ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
 
                 switch (hparams.n_layer) {
                     case 64: model.type = e_model::MODEL_3B; break;
@@ -3094,7 +3188,7 @@ static void llm_load_tensors(
                     const int64_t n_state = 16;
                     const int64_t n_inner = n_embd * 2;
                     const int64_t r_dt    = (int64_t)((n_embd / 16.0) + 0.5);
-
+                    const int64_t n_conv  = 4;
                                         
                     for (uint32_t i = 0; i < n_layer; ++i) {
                         const ggml_backend_type backend = int(i) < i_gpu_start ? GGML_BACKEND_CPU : llama_backend_offload; // NOLINT
@@ -3108,7 +3202,7 @@ static void llm_load_tensors(
                         layer.ssm_dt2 = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_DT2, i),            {r_dt, n_inner}, backend);
                         layer.ssm_dt_bias = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_DT_BIAS, i),    {n_inner}, backend);
                         layer.ssm_norm = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_NORM, i),          {n_embd}, backend);
-                        layer.ssm_mix = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_MIX, i),            {4, 1, n_embd}, backend);
+                        layer.ssm_mix = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_MIX, i),            {n_conv, 1, n_embd}, backend);
                         layer.ssm_mix_bias = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_MIX_BIAS, i),  {n_embd}, backend);
                         layer.ssm_o = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_O, i),                {n_inner, n_embd}, backend);
                         layer.ssm_v_z = ml.create_tensor(ctx, tn(LLM_TENSOR_SSM_V_Z, i),            {n_embd, 2 * n_inner}, backend);
@@ -4190,12 +4284,36 @@ static struct ggml_tensor * llm_build_kqv(
     return cur;
 }
 
+void about_exp_inplace(
+    struct ggml_context* ctx,
+    struct ggml_tensor* x,
+    struct ggml_tensor* three,
+    struct ggml_tensor* negative_three,
+    const llm_build_cb& cb,
+    int il
+) {
+    // den = ((x - 3) ** 2) + 3
+    struct ggml_tensor* den = ggml_add1(ctx, x, negative_three);
+    cb(den, "den", il);
+    ggml_sqr_inplace(ctx, den);
+    ggml_add1_inplace(ctx, den, three);
+    // num = ((x + 3) ** 2) + 3
+    struct ggml_tensor* num = x;
+    ggml_add1_inplace(ctx, num, three);
+    ggml_sqr_inplace(ctx, num);
+    ggml_add1_inplace(ctx, num, three);
+    // x = num / den
+    ggml_div_inplace(ctx, num, den);
+}
+
+
 struct llm_build_context {
     const llama_model    & model;
     const llama_hparams  & hparams;
     const llama_cparams  & cparams;
     const llama_batch    & batch;
     const llama_kv_cache & kv_self;
+    const llama_vh_cache & vh_self;
 
     const int64_t n_embd;
     const int64_t n_layer;
@@ -4240,6 +4358,7 @@ struct llm_build_context {
         cparams       (lctx.cparams),
         batch         (batch),
         kv_self       (lctx.kv_self),
+        vh_self       (lctx.vh_self),
         n_embd        (hparams.n_embd),
         n_layer       (hparams.n_layer),
         n_ctx         (cparams.n_ctx),
@@ -4470,6 +4589,216 @@ struct llm_build_context {
 
         ggml_build_forward_expand(gf, cur);
 
+        return gf;
+    }
+
+    struct ggml_cgraph* build_mamba() {
+        struct ggml_cgraph* gf = ggml_new_graph_custom(ctx0, 8 * LLAMA_MAX_NODES, false);
+        // used in softplus approximation
+        struct ggml_tensor* three = ggml_new_f32(ctx0, 3.0);
+        cb(three, "three", -1);
+        struct ggml_tensor* negative_three = ggml_new_f32(ctx0, -3.0);
+        cb(negative_three, "negative_three", -1);
+        struct ggml_tensor* one = ggml_new_f32(ctx0, 1.0);
+        cb(one, "one", -1);
+        // n_embd, n_tokens
+        struct ggml_tensor* x = llm_build_inp_embd(ctx0, hparams, batch, model.tok_embd, cb);
+        cb(x, "x", -1);
+        const int64_t n_inner = 2 * n_embd;
+        const int64_t r_dt = (int64_t)((n_embd / 16.0) + 0.5);
+        const int64_t n_state = 16;
+        const int64_t n_conv = 4;
+        for (int il = 0; il < n_layer; ++il) {
+            // n_embd, n_tokens
+            struct ggml_tensor* x_norm = ggml_rms_norm(ctx0, x, hparams.f_norm_rms_eps);
+            cb(x_norm, "x_norm", il);
+            ggml_mul_inplace(ctx0, x, model.layers[il].ssm_norm);
+            // 2 * n_inner, n_tokens
+            struct ggml_tensor* vz = ggml_mul_mat(ctx0, model.layers[il].ssm_v_z, x_norm);
+            cb(vz, "vz", il);
+            // n_inner, n_tokens
+            struct ggml_tensor* z = ggml_view_2d(
+                ctx0, vz, n_inner, n_tokens,
+                vz->nb[1], ggml_element_size(vz) * n_inner
+            );
+            ggml_silu_inplace(ctx0, z);
+            // n_inner, n_tokens, n_conv
+            struct ggml_tensor* v_pre = ggml_new_tensor_3d(
+                ctx0, v->type, n_inner, n_tokens, n_conv
+            );
+            cb(v_pre, "v_pre", il);
+            ggml_cpy_inplace(ctx0,
+                ggml_view_2d(
+                    ctx0, vz, n_inner, n_tokens, vz->nb[1], 0
+                ), 
+                ggml_view_2d(
+                    ctx0, v_pre, n_inner, n_tokens, v_pre->nb[1], 0
+                )
+            );
+            // n_inner, n_conv - 1
+            struct ggml_tensor* v_cache = vh_self.v_l[il];
+            for (int64_t i = 0; i < n_conv - 1; i++) {
+                if (n_tokens > 1) {
+                    ggml_cpy_inplace(ctx0, 
+                        ggml_view_2d(
+                            ctx0, v_pre, n_inner, n_tokens - 1, v_pre->nb[1],
+                            ggml_element_size(v_pre) * n_inner * n_tokens * i
+                        ),
+                        ggml_view_2d(
+                            ctx0, v_pre, n_inner, n_tokens - 1, v_pre->nb[1],
+                            ggml_element_size(v_pre) * (
+                                n_inner * n_tokens * (i + 1)
+                                + n_inner
+                            )
+                        )
+                    );
+                }
+                ggml_cpy_inplace(ctx0,
+                    ggml_view_1d(
+                        ctx0, v_cache, n_inner,
+                        ggml_element_size(v_cache) * n_inner * i
+                    ),
+                    ggml_view_1d(
+                        ctx0, v_pre, n_inner,
+                        ggml_element_size(v_pre) * n_inner * n_tokens * i
+                    )
+                );
+            }
+            if (n_tokens < n_conv - 1) {
+                struct ggml_tensor* v_cache_from = ggml_dup_tensor(ctx0,
+                    ggml_view_2d(
+                        ctx0, v_cache, n_inner, n_conv - 1 - n_tokens,
+                        v_cache->nb[1], 0
+                    )
+                );
+                cb(v_cache_from, "v_cache_from", il);
+                ggml_build_forward_expand(gf, ggml_cpy_inplace(ctx0,
+                    v_cache_from,
+                    ggml_view_2d(
+                        ctx0, v_cache, n_inner, n_conv - 1 - n_tokens,
+                        v_cache->nb[1], ggml_element_size(v_cache) * (
+                            n_inner * n_tokens
+                        )
+                    )
+                ));
+            }
+            // v_pre:   n_inner, n_tokens, n_conv
+            // v_cache: n_inner, n_conv
+            for (int64_t i = 0; i < (
+                (n_tokens > n_conv - 1)
+                ? n_conv - 1
+                : n_tokens
+            ); i++) {
+                ggml_build_forward_expand(gf, ggml_cpy_inplace(ctx0,
+                    ggml_view_1d(
+                        ctx0, v_pre, n_inner,
+                        ggml_element_size(v_pre) * n_inner * (n_tokens - i - 1)
+                    ),
+                    ggml_view_1d(
+                        ctx0, v_cache, n_inner,
+                        ggml_element_size(v_cache) * n_inner * i
+                    )
+                ));
+            }
+            // n_conv, 1, n_inner
+            struct ggml_tensor* v_mix = model.layers[il].ssm_mix;
+            // n_inner, 1, n_conv
+            v_mix = ggml_permute(ctx0, v_mix, 2, 1, 0, 3);
+            ggml_mul_inplace(ctx0, v_pre, v_mix);
+            // n_conv, n_inner, n_tokens
+            v_pre = ggml_permute(ctx0, v_pre, 2, 0, 1, 3);
+            // 1, n_inner, n_tokens
+            struct ggml_tensor* v = ggml_sum_rows(ctx0, v_pre);
+            cb(v, "v", il);
+            // n_inner, n_tokens
+            v = ggml_permute(ctx0, v, 1, 2, 3, 0);
+            ggml_add_inplace(ctx0, v, model.layers[il].ssm_mix_bias);
+            ggml_silu_inplace(ctx0, v);
+            // r_dt + (2 * n_state), n_tokens
+            struct ggml_tensor* dt1bc = ggml_mul_mat(ctx0, model.layers[il].ssm_dt1_b_c, v);
+            cb(dt1bc, "dt1bc", il);
+            // r_dt, n_tokens
+            struct ggml_tensor* dt1 = ggml_view_2d(
+                ctx0, dt1bc, r_dt, n_tokens,
+                dt1bc->nb[1], 0
+            )
+            // n_state, n_tokens
+            struct ggml_tensor* b = ggml_view_2d(
+                ctx0, dt1bc, n_state, n_tokens,
+                dt1bc->nb[1], ggml_element_size(dt1bc) * r_dt
+            );
+            struct ggml_tensor* c = ggml_view_2d(
+                ctx0, dt1bc, n_state, n_tokens,
+                dt1bc->nb[1], ggml_element_size(dt1bc) * (r_dt + n_state)
+            )
+            // n_inner, n_tokens
+            struct ggml_tensor* dt = ggml_mul_mat(ctx0, model.layers[il].ssm_dt2, dt1);
+            cb(dt, "dt", il);
+            ggml_add_inplace(ctx0, dt, model.layers[il].ssm_dt_bias);
+            // dt = softplus(dt) = ln(1 + e**x)
+            // TODO don't approximate e^x
+            about_exp_inplace(ctx0, dt, three, negative_three, cb, il);
+            ggml_add1_inplace(ctx0, dt, one);
+            ggml_log_inplace(ctx0, dt);
+            // n_state, n_inner
+            struct ggml_tensor* a = ggml_dup(ctx0, model.layers[il].ssm_a_log);
+            cb(a, "a", il);
+            about_exp_inplace(ctx0, a, three, negative_three, cb, il);
+            ggml_neg_inplace(ctx0, a);
+            // n_state, n_inner
+            struct ggml_tensor* h = vh_self.h_l[il];
+            // n_inner, n_tokens
+            struct ggml_tensor* y = ggml_new_tensor_2d(
+                ctx0, v->type, n_inner, n_tokens
+            );
+            cb(y, "y", il);
+            for (int64_t i = 0; i < n_tokens; i++) {
+                // n_inner
+                struct ggml_tensor* v_i = ggml_view_1d(
+                    ctx0, v, n_inner, ggml_element_size(v) * n_inner * i
+                );
+                struct ggml_tensor* dt_i = ggml_view_1d(
+                    ctx0, dt, n_inner, ggml_element_size(dt) * n_inner * i
+                );
+                // n_state
+                struct ggml_tensor* b_i = ggml_view_1d(
+                    ctx0, b, n_state, ggml_element_size(b) * n_state * i
+                );
+                struct ggml_tensor* c_i = ggml_view_1d(
+                    ctx0, c, n_state, ggml_element_size(c) * n_state * i
+                );
+                // 1, n_inner
+                dt_i = ggml_reshape_2d(ctx0, dt_i, 1, n_inner);
+                // n_state, n_inner
+                struct ggml_tensor* da_i = ggml_mul(ctx0, a, dt_i);
+                cb(da_i, "da_i", il);
+                about_exp_inplace(ctx0, da_i, three, negative_three, cb, il);
+                struct ggml_tensor* db_i = ggml_out_prod(ctx0, b_i, dt_i);
+                cb(db_i, "db_i", il);
+                // h[i] = h[i-1] * dA + v[i] * dB
+                ggml_mul_inplace(ctx0, h, da_i);
+                ggml_mul_inplace(ctx0, db_i, v_i);
+                ggml_add_inplace(ctx0, h, db_i);
+                // n_inner
+                struct ggml_tensor* y_i = ggml_mul_mat(ctx0, h, c_i);
+                cb(y_i, "y_i", il);
+                ggml_cpy_inplace(ctx0, y_i, ggml_view_1d(
+                    ctx0, y, n_inner, ggml_element_size(y) * n_inner * i
+                ));
+            }
+            ggml_mul_inplace(ctx0, v, model.layers[il].ssm_d);
+            ggml_add_inplace(ctx0, y, v);
+            ggml_mul_inplace(ctx0, y, z);
+            // n_embd, n_tokens
+            struct ggml_tensor* o = ggml_mul_mat(ctx0, model.layers[il].ssm_o, y);
+            cb(o, "o", il);
+            ggml_add_inplace(ctx0, x, o);
+        }
+        ggml_rms_norm_inplace(ctx0, x, hparams.f_norm_rms_eps);
+        ggml_mul_inplace(ctx0, x, model.output_norm);
+        struct ggml_tensor* logits = ggml_mul_mat(ctx0, model.output, x);
+        cb(logits, "logits", -1);
+        ggml_build_forward_expand(gf, logits);
         return gf;
     }
 
@@ -5998,6 +6327,10 @@ static struct ggml_cgraph * llama_build_graph(
         case LLM_ARCH_LLAMA:
             {
                 result = llm.build_llama();
+            } break;
+        case LLM_ARCH_MAMBA:
+            {
+                result = llm.build_mamba();
             } break;
         case LLM_ARCH_BAICHUAN:
             {
@@ -9217,28 +9550,52 @@ struct llama_context * llama_new_context_with_model(
 
     // reserve memory for context buffers
     if (!hparams.vocab_only) {
-        if (!llama_kv_cache_init(ctx->model.hparams, ctx->kv_self, type_k, type_v, cparams.n_ctx, model->n_gpu_layers, cparams.offload_kqv)) {
-            LLAMA_LOG_ERROR("%s: llama_kv_cache_init() failed for self-attention cache\n", __func__);
-            llama_free(ctx);
-            return nullptr;
+        if (model->arch != LLM_ARCH_MAMBA) {
+            if (!llama_kv_cache_init(ctx->model.hparams, ctx->kv_self, type_k, type_v, cparams.n_ctx, model->n_gpu_layers, cparams.offload_kqv)) {
+                LLAMA_LOG_ERROR("%s: llama_kv_cache_init() failed for self-attention cache\n", __func__);
+                llama_free(ctx);
+                return nullptr;
+            }
+        } else {
+            if (!llama_vh_cache_init(ctx->model.hparams, ctx->vh_self, type_k, type_v, cparams.n_ctx, model->n_gpu_layers, cparams.offload_kqv)) {
+                LLAMA_LOG_ERROR("%s: llama_vh_cache_init() failed for recurrence cache\n", __func__);
+                llama_free(ctx);
+                return nullptr;
+            }
         }
+        
 
         {
-            size_t memory_size_k = 0;
-            size_t memory_size_v = 0;
-
-            for (auto & k : ctx->kv_self.k_l) {
-                memory_size_k += ggml_nbytes(k);
+            size_t memory_size_1 = 0;
+            size_t memory_size_2 = 0;
+            const char* name_1 = "K";
+            const char* name_2 = "V";
+            if (model.arch == LLM_ARCH_MAMBA) {
+                name_1 = "V";
+                name_2 = "H";
             }
 
-            for (auto & v : ctx->kv_self.v_l) {
-                memory_size_v += ggml_nbytes(v);
+            for (auto & one : (
+                model.arch != LLM_ARCH_MAMBA
+                ? ctx->kv_self.k_l
+                : ctx->vh_self.v_l
+            )) {
+                memory_size_1 += ggml_nbytes(one);
             }
 
-            LLAMA_LOG_INFO("%s: KV self size  = %7.2f MiB, K (%s): %7.2f MiB, V (%s): %7.2f MiB\n", __func__,
-                (float)(memory_size_k + memory_size_v) / (1024.0f * 1024.0f),
-                ggml_type_name(type_k), (float)memory_size_k / (1024.0f * 1024.0f),
-                ggml_type_name(type_v), (float)memory_size_v / (1024.0f * 1024.0f));
+            for (auto & two : (
+                model.arch != LLM_ARCH_MAMBA
+                ? ctx->kv_self.v_l
+                : ctx->vh_self.h_l
+            )) {
+                memory_size_2 += ggml_nbytes(two);
+            }
+
+            LLAMA_LOG_INFO("%s: %s%s self size  = %7.2f MiB, %s (%s): %7.2f MiB, %s (%s): %7.2f MiB\n",
+                __func__, name_1, name_2,
+                (float)(memory_size_1 + memory_size_2) / (1024.0f * 1024.0f),
+                name_1, ggml_type_name(type_k), (float)memory_size_1 / (1024.0f * 1024.0f),
+                name_2, ggml_type_name(type_v), (float)memory_size_2 / (1024.0f * 1024.0f));
         }
 
         // resized during inference
@@ -9309,10 +9666,18 @@ struct llama_context * llama_new_context_with_model(
             }
 
             size_t kv_vram_size = 0;
-            for (auto & k : ctx->kv_self.k_l) {
+            for (auto & k : (
+                model.arch != LLM_ARCH_MAMBA
+                ? ctx->kv_self.k_l
+                : ctx->vh_self.v_l
+            )) {
                 add_tensor(k, kv_vram_size);
             }
-            for (auto & v : ctx->kv_self.v_l) {
+            for (auto & v : (
+                model.arch != LLM_ARCH_MAMBA
+                ? ctx->kv_self.v_l
+                : ctx->vh_self.h_l
+            )) {
                 add_tensor(v, kv_vram_size);
             }
 
