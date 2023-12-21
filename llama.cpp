@@ -4710,6 +4710,13 @@ struct llm_build_context {
             struct ggml_tensor* v_mix = model.layers[il].ssm_mix;
             // n_inner, 1, n_conv
             v_mix = ggml_permute(ctx0, v_mix, 2, 1, 0, 3);
+#define DEBUG_SHAPE(n, t) LLAMA_LOG_INFO(   \
+    "%s: %d, %d, %d, %d",                   \
+    n, (t).ne[0], (t).ne[1],                \
+    (t).ne[2], (t).ne[3]                    \
+)
+            DEBUG_SHAPE("v_mix", *v_mix);
+            DEBUG_SHAPE("v_pre", *v_pre);
             ggml_mul_inplace(ctx0, v_pre, v_mix);
             // n_conv, n_inner, n_tokens
             v_pre = ggml_permute(ctx0, v_pre, 2, 0, 1, 3);
