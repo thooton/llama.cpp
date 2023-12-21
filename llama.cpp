@@ -4284,7 +4284,7 @@ static struct ggml_tensor * llm_build_kqv(
     return cur;
 }
 
-void about_exp_inplace(
+static void about_exp_inplace(
     struct ggml_context* ctx,
     struct ggml_tensor* x,
     struct ggml_tensor* three,
